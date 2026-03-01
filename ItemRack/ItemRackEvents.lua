@@ -446,7 +446,7 @@ function ItemRack.ProcessZoneEvent()
 	local currentSubZone = GetSubZoneText()
 	local setToEquip, setToUnequip, setname
 	local _, instanceType = IsInInstance()
-
+    
 	for eventName in pairs(enabled) do
 		if events[eventName].Type=="Zone" then
 			setname = ItemRackUser.Events.Set[eventName]
