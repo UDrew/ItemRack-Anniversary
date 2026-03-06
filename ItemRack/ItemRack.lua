@@ -390,6 +390,18 @@ function ItemRack.FireItemRackEvent(self,event,...)
 	end
 end
 
+StaticPopupDialogs["ITEMRACK_MISSING_LSI"] = {
+	text = "ItemRack: 'Disable swap sounds' is enabled, but the required library (LibSoundIndex) is missing.\n\nItemRack will still function normally but will fall back to modifying the game's SFX CVar, which mutes all sounds during equipment swaps.\n\nPlease install LibSoundIndex for a seamless audio experience.",
+	button1 = "OK",
+	OnAccept = function()
+		ItemRackSettings.LSIWarningSeen = true
+	end,
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	preferredIndex = 3,
+}
+
 function ItemRack.OnPlayerLogin()
 	-- Normally some of these methods cannot be called in combat without causing errors, but since we run these IMMEDIATELY
 	-- on PLAYER_LOGIN event we get a grace period where it allows us to run secure code in combat.
@@ -399,6 +411,13 @@ function ItemRack.OnPlayerLogin()
 	ItemRack.InitCore()
 	ItemRack.InitButtons()
 	ItemRack.InitEvents()
+	
+	-- Check LibSoundIndex presence
+	C_Timer.After(3, function()
+		if ItemRackSettings.DisableSwapSound == "ON" and not ItemRackSettings.LSIWarningSeen and not (LibStub and LibStub("LibSoundIndex-1.0", true)) then
+			StaticPopup_Show("ITEMRACK_MISSING_LSI")
+		end
+	end)
 end
 
 function ItemRack.OnPlayerLogout()
@@ -609,7 +628,7 @@ do
 	local data = {}
 
 	function ItemRack.ListSetsHavingItem(tooltip, id)
-		if ItemRackSettings.ShowSetInTooltip ~= "ON" then
+		if ItemRackSettings.ShowTooltips ~= "ON" or ItemRackSettings.ShowSetInTooltip ~= "ON" then
 			return
 		end
 		if not id or id == 0 then return end
@@ -733,6 +752,13 @@ function ItemRack.Print(msg)
 end
 
 function ItemRack.UpdateCurrentSet()
+	local useSound = GetCVar("Sound_EnableSFX")
+	local overrideSound = false
+	if ItemRackSettings.DisableActionBarSound == "ON" and useSound == "1" then
+		SetCVar("Sound_EnableSFX", "0")
+		overrideSound = true
+	end
+
 	local texture = "Interface\\AddOns\\ItemRack\\ItemRackIcon"
 	local setname = ItemRackUser.CurrentSet or _G.CUSTOM
 	if setname and setname ~= _G.CUSTOM then
@@ -754,6 +780,8 @@ function ItemRack.UpdateCurrentSet()
 	end
 	ItemRack.Broker.icon = texture
 	ItemRack.Broker.text = setname
+
+	if overrideSound then SetCVar("Sound_EnableSFX", "1") end
 end
 
 --[[ Item info gathering ]]
@@ -1228,6 +1256,13 @@ function ItemRack.BuildMenu(id,menuInclude,masqueGroup)
 		menuInclude = ItemRack.menuInclude
 	end
 
+	local useSound = GetCVar("Sound_EnableSFX")
+	local overrideSound = false
+	if ItemRackSettings.DisableActionBarSound == "ON" and useSound == "1" then
+		SetCVar("Sound_EnableSFX", "0")
+		overrideSound = true
+	end
+
 	local showButtonMenu = (ItemRackButtonMenu and ItemRack.menuMovable) and (IsAltKeyDown() or ItemRackUser.Locked=="OFF")
 
 	for i in pairs(ItemRack.Menu) do
@@ -1426,6 +1461,8 @@ function ItemRack.BuildMenu(id,menuInclude,masqueGroup)
 			end
 		end
 	end
+
+	if overrideSound then SetCVar("Sound_EnableSFX", "1") end
 end
 
 function ItemRack.UpdateMenuCooldowns()
@@ -1460,8 +1497,16 @@ function ItemRack.MenuMouseover()
 	local frameName = nil
 	local frameVisible = nil
 	local IRmouseOverFrame = nil
-	if frame then frameName = frame:GetName() end
-	if frame then frameVisible = frame:IsVisible() end
+	
+	if frame and type(frame.GetName) == "function" then
+		local ok, name = pcall(frame.GetName, frame)
+		if ok then frameName = name end
+	end
+	if frame and type(frame.IsVisible) == "function" then
+		local ok, isVis = pcall(frame.IsVisible, frame)
+		if ok then frameVisible = isVis end
+	end
+	
 	if frameName then IRmouseOverFrame = ItemRack.MenuMouseoverFrames[frameName] end
 	if MouseIsOver(ItemRackMenuFrame) or IsShiftKeyDown() or (frame and frameName and frameVisible and IRmouseOverFrame) then
 		return -- keep menu open if mouse over menu, shift is down or mouse is immediately over a mouseover frame
@@ -1547,7 +1592,7 @@ function ItemRack.MenuOnClick(self,button)
 			ItemRackMenuFrame:Hide()
 		end
 	elseif ItemRack.menuOpen<20 then
-		if ItemRack.BankOpen then
+		if ItemRack.BankOpen and not IsShiftKeyDown() then
 			if ItemRack.GetCountByID(item)==0 then
 				local bankBag,bankSlot = ItemRack.FindInBank(item)
 				if bankBag then
@@ -1584,21 +1629,71 @@ function ItemRack.MenuOnClick(self,button)
 			ItemRackMenuFrame:Hide()
 		end
 	elseif ItemRack.menuOpen==20 then
-		if ItemRack.BankOpen then
+		if ItemRack.BankOpen and not IsShiftKeyDown() then
 			if ItemRack.MissingItems(item)==1 then
 				ItemRack.GetBankedSet(item)
 			else
 				ItemRack.PutBankedSet(item)
 			end
-		elseif ItemRackSettings.EquipToggle=="ON" or IsShiftKeyDown() then
+		elseif ItemRackSettings.EquipToggle=="ON" then
 			ItemRack.ToggleSet(item)
 		else
 			ItemRack.EquipSet(item)
 		end
-		if not ItemRack.BankOpen then
+		if not ItemRack.BankOpen or IsShiftKeyDown() then
 			ItemRack.StopTimer("MenuMouseover")
 			ItemRackMenuFrame:Hide()
 		end
+	end
+end
+
+-- UI SoundKit constants that fire during gear swaps
+ItemRack.SwapUISounds = {
+	"IG_BACKPACK_OPEN",          -- Bag opens during item move
+	"IG_BACKPACK_CLOSE",         -- Bag closes after item move
+	"IG_ABILITY_ICON_DROP",      -- Action bar spell swap
+	"IG_CHARACTER_INFO_OPEN",    -- Character panel opens
+	"IG_CHARACTER_INFO_CLOSE",   -- Character panel closes
+	"PUT_DOWN_GEMS",             -- Gem/item putdown
+	"PICK_UP_GEMS",              -- Gem/item pickup
+	"PUT_DOWN_SMALL_CHAIN",      -- Chain item putdown
+}
+
+-- Mute all swap-related sounds using LibSoundIndex
+-- Returns: LSI reference (truthy) if surgical muting was used, nil otherwise
+function ItemRack.MuteSwapSounds(duration)
+	duration = duration or 1.5
+	local LSI = LibStub and LibStub("LibSoundIndex-1.0", true)
+	if not LSI then return nil end
+
+	-- Mute equip material sounds (armor foley, weapon sheathe/unsheathe)
+	LSI:MuteEquipCategory("ALL_EQUIP")
+
+	-- Mute UI sounds that fire during item moves
+	for _, soundKit in ipairs(ItemRack.SwapUISounds) do
+		LSI:MuteSoundKit(soundKit)
+	end
+
+	-- Auto-unmute after duration
+	if ItemRack.SwapMuteTimer then
+		ItemRack.SwapMuteTimer:Cancel()
+	end
+	ItemRack.SwapMuteTimer = C_Timer.NewTimer(duration, function()
+		ItemRack.UnmuteSwapSounds()
+		ItemRack.SwapMuteTimer = nil
+	end)
+
+	return LSI
+end
+
+-- Unmute all swap-related sounds
+function ItemRack.UnmuteSwapSounds()
+	local LSI = LibStub and LibStub("LibSoundIndex-1.0", true)
+	if not LSI then return end
+
+	LSI:UnmuteEquipCategory("ALL_EQUIP")
+	for _, soundKit in ipairs(ItemRack.SwapUISounds) do
+		LSI:UnmuteSoundKit(soundKit)
 	end
 end
 
@@ -1611,8 +1706,12 @@ function ItemRack.EquipItemByID(id,slot)
 		local useSound = GetCVar("Sound_EnableSFX")
 		local overrideSound = false
 		if disableSound and useSound == "1" then
-			SetCVar("Sound_EnableSFX", "0")
-			overrideSound = true
+			-- Try surgical muting via LibSoundIndex
+			if not ItemRack.MuteSwapSounds(1.5) then
+				-- Fallback: blunt CVar mute (silences ALL SFX)
+				SetCVar("Sound_EnableSFX", "0")
+				overrideSound = true
+			end
 		end
 		
 		if id~=0 then -- not an empty slot
@@ -1648,7 +1747,24 @@ function ItemRack.EquipItemByID(id,slot)
 			end
 		end
 		
-		if overrideSound then SetCVar("Sound_EnableSFX", "1") end
+		-- CVar fallback restore
+		if overrideSound then
+			if ItemRack.CVarMuteTimer then
+				ItemRack.CVarMuteTimer:Cancel()
+			end
+			ItemRack.CVarMuteTimer = C_Timer.NewTimer(1.5, function()
+				SetCVar("Sound_EnableSFX", "1")
+				ItemRack.CVarMuteTimer = nil
+			end)
+		end
+	end
+end
+
+function ItemRack.PollMovement()
+	-- If speed is 0, they have landed and lost momentum. Re-evaluate Buffs and stop timer.
+	if GetUnitSpeed("player") == 0 then
+		ItemRack.ProcessBuffEvent()
+		ItemRack.StopTimer("MovementPollingTimer")
 	end
 end
 
@@ -1750,6 +1866,7 @@ end
 
 -- request a tooltip of an inventory slot
 function ItemRack.InventoryTooltip(self)
+	if ItemRackSettings.ShowTooltips ~= "ON" then return end
 	local id = self:GetID()
 	if id==20 then
 		ItemRack.SetTooltip(self,ItemRackUser.CurrentSet)
@@ -1764,6 +1881,7 @@ end
 
 -- request a tooltip of a menu item (called when hovering over a button in the popout menu of SET NAMES that comes up when clicking the minimap button or bar addon plugin, this is NOT the "Sets" dropdown INSIDE ItemRack's GUI)
 function ItemRack.MenuTooltip(self)
+	if ItemRackSettings.ShowTooltips ~= "ON" then return end
 	local id = self:GetID()
 	if ItemRack.menuOpen==20 then
 		ItemRack.SetTooltip(self,ItemRack.Menu[id])
@@ -1782,6 +1900,7 @@ end
 
 -- request a tooltip of a straight item id (called when hovering over items from the currently displayed set inside ItemRack's GUI)
 function ItemRack.IDTooltip(self,itemID) --itemID is an ItemRack-style ID
+	if ItemRackSettings.ShowTooltips ~= "ON" then return end
 	ItemRack.AnchorTooltip(self)
 	local inv,bag,slot = ItemRack.FindItem(itemID) --try to find the item in the player's equipment and inventory, first tries to find the exact item, then looks for any item with the same baseID
 	if inv then -- item found in player's worn equipment
@@ -1799,6 +1918,13 @@ function ItemRack.IDTooltip(self,itemID) --itemID is an ItemRack-style ID
 	end
 	ItemRack.ShrinkTooltip(self)
 	GameTooltip:Show()
+	
+	-- Suppress WoW's default compare tooltips if MenuOnShift is active
+	-- Otherwise holding shift to open the menu covers the screen in 3 tooltips
+	if ItemRackSettings.MenuOnShift=="ON" and IsShiftKeyDown() then
+		if ShoppingTooltip1 then ShoppingTooltip1:Hide() end
+		if ShoppingTooltip2 then ShoppingTooltip2:Hide() end
+	end
 end
 
 function ItemRack.ClearTooltip(self)
@@ -1808,7 +1934,7 @@ function ItemRack.ClearTooltip(self)
 end
 
 function ItemRack.AnchorTooltip(owner)
-	if string.match(ItemRack.menuDockedTo or "","^Character") then
+	if ItemRackMenuFrame and ItemRackMenuFrame:IsVisible() and string.match(ItemRack.menuDockedTo or "","^Character") then
 		local name = ItemRack.menuDockedTo
 		local slot
 		for i=0,19 do
@@ -1869,6 +1995,13 @@ function ItemRack.TooltipUpdate()
 			GameTooltip:AddLine("Queued: "..ItemRack.TooltipBag)
 		end
 		GameTooltip:Show()
+		
+		-- Suppress WoW's default compare tooltips if MenuOnShift is active
+		if ItemRackSettings.MenuOnShift=="ON" and IsShiftKeyDown() then
+			if ShoppingTooltip1 then ShoppingTooltip1:Hide() end
+			if ShoppingTooltip2 then ShoppingTooltip2:Hide() end
+		end
+		
 		if cooldown==0 then
 			-- stop updates if this trinket has no cooldown
 			ItemRack.StopTimer("TooltipUpdate")
@@ -1902,7 +2035,9 @@ function ItemRack.OnTooltip(self,line1,line2)
 end
 
 function ItemRack.ShrinkTooltip(owner)
-	if ItemRackSettings.TinyTooltips=="ON" then
+	local isQuickAccess = (owner and type(owner.GetID) == "function" and owner:GetID() < 20)
+	
+	if ItemRackSettings.TinyTooltips=="ON" or (ItemRackSettings.TinyTooltipsQuickAccess=="ON" and isQuickAccess) then
 		local r,g,b = GameTooltipTextLeft1:GetTextColor()
 		local name = GameTooltipTextLeft1:GetText()
 		local line,charge,durability,cooldown
@@ -1932,6 +2067,7 @@ function ItemRack.ShrinkTooltip(owner)
 end
 
 function ItemRack.SetTooltip(self,setname)
+	if ItemRackSettings.ShowTooltips ~= "ON" then return end
 	local set = setname and ItemRackUser.Sets[setname] and ItemRackUser.Sets[setname].equip
 	if set then
 		local itemName,itemColor
@@ -2113,12 +2249,15 @@ function ItemRack.ApplyTooltipAnchor()
 	local owner = ItemRack.pendingTooltipOwner
 	if not anchor or not owner then return end
 	
-	-- Only apply to ItemRack-related tooltips
+	-- Only apply to ItemRack-related tooltips that aren't the standard action buttons (which handle themselves)
 	local tooltipOwner = GameTooltip:GetOwner()
 	if not tooltipOwner or not tooltipOwner.GetName then return end
 	local ownerName = tooltipOwner:GetName() or ""
-	if not (ownerName:match("^Character") or ownerName:match("^ItemRack")) then
-		-- Not an ItemRack related tooltip — clear stale pending state
+	
+	-- We want to apply the anchor for Character sheet slots AND for ItemRackMenuFrame / ItemRackOpt menus.
+	-- We DO NOT want to apply it for ItemRackButton (the quick access buttons), because they have their own anchoring in ItemRack.InventoryTooltip.
+	if ownerName:match("^ItemRackButton") or not (ownerName:match("^Character") or ownerName:match("^ItemRack")) then
+		-- Not an ItemRack menu/character tooltip — clear stale pending state
 		ItemRack.pendingTooltipAnchor = nil
 		ItemRack.pendingTooltipOwner = nil
 		return
@@ -2252,7 +2391,7 @@ function ItemRack.MinimapOnClick(self,button)
 end
 
 function ItemRack.MinimapOnEnter(tooltip)
-	if ItemRackSettings.MinimapTooltip~="ON" then return end
+	if ItemRackSettings.ShowTooltips ~= "ON" or ItemRackSettings.MinimapTooltip ~= "ON" then return end
 	
 	-- Re-anchor tooltip to avoid covering the menu/frame
 	-- We use GetMouseFocus() to find the minimap button frames since LDB doesn't pass the frame
