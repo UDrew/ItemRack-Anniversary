@@ -229,6 +229,7 @@ function ItemRack.InitEvents()
 	ItemRack.CreateTimer("EventsZoneTimer",ItemRack.ProcessZoneEvent,.16)
 	ItemRack.CreateTimer("CheckForMountedEvents",ItemRack.CheckForMountedEvents,.5,1)
 	ItemRack.CreateTimer("SpecChangeTimer",ItemRack.ProcessSpecializationEvent,0.5,1)
+	ItemRack.CreateTimer("MovementPollingTimer",ItemRack.PollMovement,.2,1)
 	
 	-- Prime all events to prevent redundant swaps on login/reload
 	local getSpec = GetActiveTalentGroup or (C_Talent and C_Talent.GetActiveTalentGroup)
@@ -566,11 +567,13 @@ function ItemRack.ProcessSpecializationEvent()
 	end
 	
 	-- Unequip first, then equip (to avoid conflicts)
-	if setToUnequip then
+	local unequipTriggered = false
+	if setToUnequip and setToUnequip ~= setToEquip then
 		ItemRack.UnequipSet(setToUnequip, disableSoundUnequip)
+		unequipTriggered = true
 	end
 	if setToEquip then
-		if not ItemRack.IsSetEquipped(setToEquip) then
+		if not ItemRack.IsSetEquipped(setToEquip) or unequipTriggered then
 			ItemRack.Print("Spec changed! Equipping set: "..setToEquip)
 			ItemRack.EquipSet(setToEquip, disableSoundEquip)
 			
