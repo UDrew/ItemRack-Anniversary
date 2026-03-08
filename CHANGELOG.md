@@ -1,6 +1,13 @@
 # Changelog - ItemRack TBC Anniversary
 
 All notable changes to the TBC Anniversary port of ItemRack will be documented in this file.
+## [4.29.8] - 2026-03-08
+### New Features
+- **Per-Queue Queue Settings (PR #7)**: Integrated community pull request #7 which migrates Queue settings (Priority, Keep, Delay) from a global per-item list into the actual Queue data structure. This means you can now have an item set to "Keep" in one queue/slot, but not in another, allowing much greater flexibility!
+
+### Bug Fixes
+- **Queue Variable Typo**: Fixed a variable naming bug introduced in the PR #7 migration (`equippedBaseID` used instead of `baseID`) which prevented the Priority, Keep, and Delay functions from reading correctly in the auto-queue.
+- **Zone Event Re-equipping (Issue #5)**: Fixed a bug where transitioning between two subzones/zones that are *both* part of the same Zone Event (e.g. from Elwynn Forest to Stormwind City) wouldn't re-equip your event gear if you had temporarily changed gear. The addon will now correctly attempt to re-equip your zone gear on every valid zone transition.
 
 ## [4.29.7] - 2026-03-07
 ### Bug Fixes
