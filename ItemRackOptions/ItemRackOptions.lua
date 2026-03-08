@@ -80,6 +80,7 @@ ItemRack.CheckButtonLabels = {
 	["ItemRackOptEventEditSpec1Text"] = "Primary Spec",
 	["ItemRackOptEventEditSpec2Text"] = "Secondary Spec",
 	["ItemRackOptEventEditSpecializationUnequipText"] = "Unequip when leaving spec",
+
 }
 
 ItemRack.SetnameBlacklist = {
@@ -709,13 +710,9 @@ function ItemRackOpt.DeleteSet()
 	if ItemRackUser.Sets[setname] then
 		if not InCombatLockdown() then
 			local buttonName = "ItemRack"..UnitName("player")..GetRealmName()..setname
-			local action = "CLICK "..buttonName..":LeftButton"
-			while GetBindingKey(action) do
-				SetBinding(GetBindingKey(action))
-			end
-			local bindingSet = GetCurrentBindingSet()
-			if bindingSet then
-				SaveBindings(bindingSet)
+			local button = _G[buttonName]
+			if button then
+				ClearOverrideBindings(button)
 			end
 		else
 			ItemRack.Print("Cannot delete set keybindings in combat.")
@@ -1090,6 +1087,15 @@ function ItemRackOpt.OptListCheckButtonOnClick(self,override)
 		ItemRack.ShowMinimap()
 	elseif opt.variable=="EnableQueues" or opt.variable=="EnablePerSetQueues" then
 		ItemRack.UpdateCombatQueue()
+	elseif opt.variable=="TinyTooltips" then
+		if check=="ON" then
+			ItemRackSettings.TinyTooltipsQuickAccess = "OFF"
+			ItemRackSettings.TinyTooltipsSubMenusOnly = "OFF"
+		end
+	elseif opt.variable=="TinyTooltipsQuickAccess" then
+		if check=="ON" then
+			ItemRackSettings.TinyTooltips = "OFF"
+		end
 	elseif opt.variable=="ShowHotKeys" then
 		ItemRack.KeyBindingsChanged()
 	elseif opt.variable=="EnableEvents" then
@@ -1184,7 +1190,7 @@ end
 function ItemRackOpt.BindSet()
 	local setname = ItemRackOptSetsName:GetText()
 	ItemRackOpt.Binding = { type="Set", name="Set \""..setname.."\"", buttonName="ItemRack"..UnitName("player")..GetRealmName()..setname }
-	ItemRackOpt.Binding.button = _G[buttonName] or CreateFrame("Button",ItemRackOpt.Binding.buttonName,nil,"SecureActionButtonTemplate")
+	ItemRackOpt.Binding.button = _G[ItemRackOpt.Binding.buttonName] or CreateFrame("Button",ItemRackOpt.Binding.buttonName,nil,"SecureActionButtonTemplate")
 	
 	ItemRackOptBindFrame:Show()	
 end
@@ -1280,11 +1286,15 @@ end
 function ItemRackOpt.SetKeyBinding()
 	if not InCombatLockdown() and ItemRackOpt.Binding.keyPressed then
 		ItemRackOpt.UnbindKey()
-		SetBindingClick(ItemRackOpt.Binding.keyPressed,ItemRackOpt.Binding.buttonName)
-		local bindingSet = GetCurrentBindingSet()
-		if bindingSet then
-			SaveBindings(bindingSet)
+		-- Clear any conflicting standard binding so our override takes effect
+		local key = ItemRackOpt.Binding.keyPressed
+		if GetBindingAction(key) ~= "" then
+			SetBinding(key, nil)
+			SaveBindings(GetCurrentBindingSet())
 		end
+		local button = _G[ItemRackOpt.Binding.buttonName] or CreateFrame("Button",ItemRackOpt.Binding.buttonName,nil,"SecureActionButtonTemplate")
+		-- Use override binding (non-priority) so the game can replace it
+		SetOverrideBindingClick(button, false, key, ItemRackOpt.Binding.buttonName)
 	else
 		ItemRack.Print("Sorry, you can't bind keys while in combat.")
 	end
@@ -1301,9 +1311,9 @@ end
 
 function ItemRackOpt.UnbindKey()
 	if not InCombatLockdown() and ItemRackOpt.Binding.buttonName then
-		local action = "CLICK "..ItemRackOpt.Binding.buttonName..":LeftButton"
-		while GetBindingKey(action) do
-			SetBinding(GetBindingKey(action))
+		local button = _G[ItemRackOpt.Binding.buttonName]
+		if button then
+			ClearOverrideBindings(button)
 		end
 	end
 	if ItemRackOpt.prevFrame==ItemRackOptSubFrame6 then
@@ -1369,7 +1379,7 @@ end
 
 function ItemRackOpt.BindSlot(slot)
 	ItemRackOpt.Binding = { type="Slot", name=ItemRack.SlotInfo[slot].real, buttonName="ItemRackButton"..slot }
-	ItemRackOpt.Binding.button = _G[buttonName]
+	ItemRackOpt.Binding.button = _G[ItemRackOpt.Binding.buttonName]
 	ItemRackOptBindFrame:Show()	
 end
 
@@ -1436,7 +1446,7 @@ function ItemRackOpt.PopulateSortList(slot)
 		local i = 1
 		while i <= #sortList do
 			local entry = sortList[i]
-			if entry == 0 then
+			if entry.id == 0 then
 				-- The "stop queue here" marker
 				if stopMarkerSeen then
 					-- Duplicate stop marker, remove it
@@ -1446,7 +1456,7 @@ function ItemRackOpt.PopulateSortList(slot)
 					i = i + 1
 				end
 			else
-				local baseID = ItemRack.GetIRString(entry, true) -- get base item ID
+				local baseID = ItemRack.GetIRString(entry.id, true) -- get base item ID
 				if seen[baseID] then
 					-- Duplicate item found, remove it
 					table.remove(sortList, i)
@@ -1473,16 +1483,34 @@ function ItemRackOpt.AddToSortList(sortList,id)
 	-- Use base ID comparison to prevent duplicates when full ID strings differ
 	-- (e.g., same item with different player level encoded, or minor ID format differences)
 	for i=1,#(sortList) do
-		if sortList[i] == 0 and id == 0 then
+		if sortList[i].id == 0 and id == 0 then
 			found = true
+			
 			break
-		elseif sortList[i] ~= 0 and id ~= 0 and (sortList[i] == id or ItemRack.SameID(sortList[i], id)) then
+		elseif sortList[i].id ~= 0 and id ~= 0 and (sortList[i].id == id or ItemRack.SameID(sortList[i].id, id)) then
 			found = true
 			break
 		end
 	end
+	
 	if not found then
-		table.insert(sortList,id)
+		local item = {
+		id = id,
+		
+		-- these are default items with non-standard behavior
+		-- keep = 1/nil whether to suspend auto queue while equipped
+		-- priority = 1/nil whether to equip as it comes off cooldown even if equipped is off cooldown waiting to be used
+		-- delay = time(seconds) after use before swapping out
+		keep = 
+			id == "11122" or -- carrot on a stick
+			id == "13209" or -- seal of the dawn
+			id == "19812" or -- rune of the dawn
+			id == "12846" or -- argent dawn commission 
+			id == "25653", -- riding crop
+		priority = false,
+		delay = "0"}
+	
+		table.insert(sortList,item)
 	end
 end
 
@@ -1688,11 +1716,12 @@ function ItemRackOpt.SortListScrollFrameUpdate()
 		item = _G["ItemRackOptSortList"..i]
 		idx = offset + i
 		if sortList and idx<=#(sortList) then
-			if sortList[idx]==0 then
+			if sortList[idx].id==0 then
 				name,texture,quality = "-- stop queue here --","Interface\\Buttons\\UI-GroupLoot-Pass-Up",1
 			else
-				name,texture,_,quality = ItemRack.GetInfoByID(sortList[idx])
+				name,texture,_,quality = ItemRack.GetInfoByID(sortList[idx].id)
 			end
+			
 			_G["ItemRackOptSortList"..i.."Name"]:SetText(name)
 			_G["ItemRackOptSortList"..i.."Icon"]:SetTexture(texture)
 			local r,g,b = GetItemQualityColor(quality or 1)
@@ -1761,10 +1790,11 @@ function ItemRackOpt.ValidateSortButtons()
 		ItemRackOptItemStatsFrame:Show()
 		ItemRackOptSlotQueueName:Hide()
 		ItemRackOptQueueEnable:Hide()
-		local baseID = ItemRack.GetIRString(list[selected],true)
-		ItemRackOptItemStatsPriority:SetChecked(ItemRackItems[baseID] and ItemRackItems[baseID].priority or false)
-		ItemRackOptItemStatsKeepEquipped:SetChecked(ItemRackItems[baseID] and ItemRackItems[baseID].keep or false)
-		ItemRackOptItemStatsDelay:SetText((ItemRackItems[baseID] and ItemRackItems[baseID].delay) or "0")
+		local baseID = ItemRack.GetIRString(list[selected].id,true)
+
+		ItemRackOptItemStatsPriority:SetChecked(list[selected].id ~= "0" and list[selected].priority or false)
+		ItemRackOptItemStatsKeepEquipped:SetChecked(list[selected].id ~= "0" and list[selected].keep or false)
+		ItemRackOptItemStatsDelay:SetText((list[selected].id ~= "0" and list[selected].delay) or "0")
 	else
 		ItemRackOptSortMoveDelete:Disable()
 		ItemRackOptItemStatsFrame:Hide()
@@ -1818,10 +1848,10 @@ function ItemRackOpt.SortListOnEnter(self)
 	local idx = FauxScrollFrame_GetOffset(ItemRackOptSortListScrollFrame) + self:GetID()
 	local list = ItemRack.GetQueues()[ItemRackOpt.SelectedSlot]
 	if list[idx] then
-		if list[idx]==0 then
+		if list[idx].id==0 then
 			ItemRack.OnTooltip(self,"Stop Queue Here","Move this to mark an explicit end to an order. ie, if you have a clickable trinket with a passive effect, and would like to use the passive effect if no better trinkets are off cooldown.")
 		else
-			ItemRack.IDTooltip(self,list[idx])
+			ItemRack.IDTooltip(self,list[idx].id)
 		end
 	end
 end
@@ -1833,46 +1863,22 @@ function ItemRackOpt.SortListOnLeave(self)
 	end
 end
 
--- if an ItemRackItems has no non-default values, remove the entry
-function ItemRackOpt.ItemStatsCleanup(id)
-	if ItemRackItems[id] then
-		local item = ItemRackItems[id]
-		if not item.delay and not item.priority and not item.keep then
-			ItemRackItems[id] = nil
-		end
-	end
-end
-
 function ItemRackOpt.ItemStatsDelayOnTextChanged(self)
-	local baseID = ItemRack.GetIRString(ItemRack.GetQueues()[ItemRackOpt.SelectedSlot][ItemRackOpt.SortSelected],true)
+	local list = ItemRack.GetQueues()[ItemRackOpt.SelectedSlot]
 	local value = tonumber(self:GetText() or "") or 0
-	if value~=0 then
-		if not ItemRackItems[baseID] then
-			ItemRackItems[baseID] = {}
-		end
-		ItemRackItems[baseID].delay = value
-	else
-		if ItemRackItems[baseID] then
-			ItemRackItems[baseID].delay = nil
-		end
-		ItemRackOpt.ItemStatsCleanup(baseID)
-	end
+
+	list[ItemRackOpt.SortSelected].delay = value
 end
 
 function ItemRackOpt.ItemStatsCheckOnClick(self)
-	local baseID = ItemRack.GetIRString(ItemRack.GetQueues()[ItemRackOpt.SelectedSlot][ItemRackOpt.SortSelected],true)
+	local list = ItemRack.GetQueues()[ItemRackOpt.SelectedSlot]
 	local value = self:GetChecked()
 	local which = self==ItemRackOptItemStatsPriority and "priority" or "keep"
-	if value then
-		if not ItemRackItems[baseID] then
-			ItemRackItems[baseID] = {}
-		end
-		ItemRackItems[baseID][which] = 1
+
+	if which == "keep" then
+		list[ItemRackOpt.SortSelected].keep = value
 	else
-		if ItemRackItems[baseID] then
-			ItemRackItems[baseID][which] = nil
-		end
-		ItemRackOpt.ItemStatsCleanup(baseID)
+		list[ItemRackOpt.SortSelected].priority = value
 	end
 end
 
@@ -2170,22 +2176,22 @@ function ItemRackOpt.EventEditClearFrame()
 	ItemRackOptEventEditBuffAnyMount:SetChecked(false)
 	ItemRackOptEventEditBuffOnMovement:SetChecked(false)
 	ItemRackOptEventEditBuffUnequip:SetChecked(false)
-	ItemRackOptEventEditBuffDisableSound:SetChecked(false)
+
 	ItemRackOptEventEditBuffNotInPVP:SetChecked(false)
 	ItemRackOptEventEditBuffNotInPVE:SetChecked(false)
 	ItemRackOptEventEditStanceName:SetText("")
 	ItemRackOptEventEditStanceUnequip:SetChecked(false)
-	ItemRackOptEventEditStanceDisableSound:SetChecked(false)
+
 	ItemRackOptEventEditStanceNotInPVP:SetChecked(false)
 	ItemRackOptEventEditZoneEditBox:SetText("")
 	ItemRackOptEventEditZoneUnequip:SetChecked(false)
-	ItemRackOptEventEditZoneDisableSound:SetChecked(false)
+
 	ItemRackOptEventEditScriptTrigger:SetText("")
 	ItemRackOptEventEditScriptEditBox:SetText("")
 	ItemRackOptEventEditSpec1:SetChecked(false)
 	ItemRackOptEventEditSpec2:SetChecked(false)
 	ItemRackOptEventEditSpecializationUnequip:SetChecked(false)
-	ItemRackOptEventEditSpecializationDisableSound:SetChecked(false)
+
 end
 
 function ItemRackOpt.EventEditPopulateFrame()
@@ -2205,17 +2211,17 @@ function ItemRackOpt.EventEditPopulateFrame()
 		end
 		ItemRackOptEventEditBuffOnMovement:SetChecked(event.OnMovement)
 		ItemRackOptEventEditBuffUnequip:SetChecked(event.Unequip)
-		ItemRackOptEventEditBuffDisableSound:SetChecked(event.DisableSound)
+
 		ItemRackOptEventEditBuffNotInPVP:SetChecked(event.NotInPVP)
 		ItemRackOptEventEditBuffNotInPVE:SetChecked(event.NotInPVE)
 		ItemRackOptEventEditStanceName:SetText(event.Stance or "")
 		ItemRackOptEventEditStanceUnequip:SetChecked(event.Unequip)
-		ItemRackOptEventEditStanceUnequip:SetChecked(event.Unequip)
+
 		ItemRackOptEventEditStanceNotInPVP:SetChecked(event.NotInPVP)
 		ItemRackOptEventEditZoneEditBox:SetText(ItemRackOpt.ConvertZoneTableToList(event.Zones))
 		ItemRackOptEventEditZoneEditBox:SetCursorPosition(0)
 		ItemRackOptEventEditZoneUnequip:SetChecked(event.Unequip)
-		ItemRackOptEventEditZoneUnequip:SetChecked(event.Unequip)
+
 		ItemRackOptEventEditScriptTrigger:SetText(event.Trigger or "")
 		ItemRackOptEventEditScriptTrigger:SetCursorPosition(0)
 		ItemRackOptEventEditScriptEditBox:SetText(event.Script or "")
@@ -2225,7 +2231,7 @@ function ItemRackOpt.EventEditPopulateFrame()
 			if event.Spec == 2 then ItemRackOptEventEditSpec2:SetChecked(true) end
 		end
 		ItemRackOptEventEditSpecializationUnequip:SetChecked(event.Unequip)
-		ItemRackOptEventEditSpecializationUnequip:SetChecked(event.Unequip)
+
 	else
 		ItemRackOptEventEditNameEdit:SetFocus()
 	end
@@ -2387,7 +2393,7 @@ function ItemRackOpt.EventEditSave(override)
 		event.Anymount = ItemRackOptEventEditBuffAnyMount:GetChecked()
 		event.OnMovement = ItemRackOptEventEditBuffOnMovement:GetChecked()
 		event.Unequip = ItemRackOptEventEditBuffUnequip:GetChecked()
-		event.DisableSound = ItemRackOptEventEditBuffDisableSound:GetChecked()
+
 		event.NotInPVP = ItemRackOptEventEditBuffNotInPVP:GetChecked()
 		event.NotInPVE = ItemRackOptEventEditBuffNotInPVE:GetChecked()
 	elseif event.Type=="Stance" then
@@ -2396,16 +2402,16 @@ function ItemRackOpt.EventEditSave(override)
 			event.Stance = tonumber(event.Stance)
 		end
 		event.Unequip = ItemRackOptEventEditStanceUnequip:GetChecked()
-		event.DisableSound = ItemRackOptEventEditStanceDisableSound:GetChecked()
+
 		event.NotInPVP = ItemRackOptEventEditStanceNotInPVP:GetChecked()
 	elseif event.Type=="Zone" then
 		event.Unequip = ItemRackOptEventEditZoneUnequip:GetChecked()
-		event.DisableSound = ItemRackOptEventEditZoneDisableSound:GetChecked()
+
 		event.Zones = {}
 		ItemRackOpt.ConvertZoneListToTable(ItemRackOptEventEditZoneEditBox:GetText(),event.Zones)
 	elseif event.Type=="Specialization" then
 		event.Unequip = ItemRackOptEventEditSpecializationUnequip:GetChecked()
-		event.DisableSound = ItemRackOptEventEditSpecializationDisableSound:GetChecked()
+
 		if ItemRackOptEventEditSpec1:GetChecked() then event.Spec = 1
 		elseif ItemRackOptEventEditSpec2:GetChecked() then event.Spec = 2
 		end
