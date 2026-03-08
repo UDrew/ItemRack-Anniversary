@@ -514,13 +514,13 @@ function ItemRack.IsSetEquipped(setname,exact)
 					local ready = ItemRack.ItemNearReady(baseID)
 					local active = ItemRack.AutoQueueItemToEquip(i, baseID, enable, ready)
 					if active and not same(active, id) then
-						match = false   -- list would swap to a different item
+						match = false   -- Auto Queue would swap to a different item
 					end
 					-- if active is nil, no swap would occur → keep match as is
 				end
 			end
 			
-			if not match then print(match) return false end
+			if not match then return false end
 		end
 		return anyChecked
 	end
