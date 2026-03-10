@@ -1,6 +1,11 @@
 # Changelog - ItemRack TBC Anniversary
 
 All notable changes to the TBC Anniversary port of ItemRack will be documented in this file.
+
+## [4.29.9] - 2026-03-09
+### Bug Fixes
+- **Keybind Persistence & UI Overrides**: Reverted the core set keybinding logic to use `SetBindingClick` instead of `SetOverrideBindingClick`. This fixes an issue where standard WoW keybindings were fighting ItemRack and being improperly deleted during overlap resolution, while also ensuring that users' saved keybinds correctly restore on login. Both the native game UI and ItemRack Options can now freely edit, delete, and persist set hotkeys synchronously.
+
 ## [4.29.8] - 2026-03-08
 ### New Features
 - **Per-Queue Queue Settings (PR #7)**: Integrated community pull request #7 which migrates Queue settings (Priority, Keep, Delay) from a global per-item list into the actual Queue data structure. This means you can now have an item set to "Keep" in one queue/slot, but not in another, allowing much greater flexibility!
