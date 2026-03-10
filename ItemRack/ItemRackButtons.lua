@@ -238,7 +238,7 @@ end
 function ItemRack.UpdateDisableAltClick()
 	if not InCombatLockdown() then
 		for i=0,19 do
-			_G["ItemRackButton"..i]:SetAttribute("alt-slot*",ItemRackSettings.DisableAltClick=="OFF" and ATTRIBUTE_NOOP or nil)
+			_G["ItemRackButton"..i]:SetAttribute("alt-type1",ItemRackSettings.DisableAltClick=="OFF" and ATTRIBUTE_NOOP or nil)
 		end
 	end
 end
