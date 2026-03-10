@@ -96,39 +96,32 @@ function ItemRack.ManualQueueAdvance(slot)
 	local list = ItemRack.GetQueues()[slot]
 	if not list or #list == 0 then return end
 	
-	-- Get currently equipped item's base ID
-	local equippedLink = GetInventoryItemLink("player", slot)
-	local equippedBaseID = equippedLink and string.match(equippedLink, "item:(%d+)") or nil
+	-- Get currently equipped item's exact ID and base ID
+	local equippedExactID = ItemRack.GetID(slot)
+	local equippedBaseID = ItemRack.GetIRString(equippedExactID, true)
 	
-	-- Find current item in queue
+	-- Find current item in queue (exact match first)
 	local currentIdx = 0
 	for i = 1, #list do
 		if list[i].id ~= 0 then
-			local queueBaseID = string.match(tostring(list[i]), "^(%d+)")
-			if queueBaseID == equippedBaseID then
+			if ItemRack.SameExactID(list[i].id, equippedExactID) then
 				currentIdx = i
 				break
 			end
 		end
 	end
 	
-	-- Find next valid item in queue (searches bags for base ID match)
-	local function findInBags(baseID)
-		for bag = 0, 4 do
-			for bagSlot = 1, C_Container.GetContainerNumSlots(bag) do
-				local itemLink = C_Container.GetContainerItemLink(bag, bagSlot)
-				if itemLink then
-					local itemBaseID = string.match(itemLink, "item:(%d+)")
-					if itemBaseID == baseID then
-						local info = C_Container.GetContainerItemInfo(bag, bagSlot)
-						if info and not info.isLocked then
-							return bag, bagSlot
-						end
-					end
+	-- If exact match fails, fallback to base ID match
+	if currentIdx == 0 then
+		for i = 1, #list do
+			if list[i].id ~= 0 then
+				local queueBaseID = string.match(tostring(list[i].id), "^(%d+)")
+				if queueBaseID == equippedBaseID then
+					currentIdx = i
+					break
 				end
 			end
 		end
-		return nil, nil
 	end
 	
 	-- Helper to attempt swap or queue
@@ -136,7 +129,7 @@ function ItemRack.ManualQueueAdvance(slot)
 		if InCombatLockdown() or UnitAffectingCombat("player") or ItemRack.IsPlayerReallyDead() then
 			-- In combat: Add to combat queue instead of swapping
 			ItemRack.AddToCombatQueue(slot, itemID)
-			ItemRack.Print("Queued for after combat: "..tostring(select(1, GetItemInfo(itemID)) or itemID))
+			ItemRack.Print("Queued for after combat: "..tostring(select(1, ItemRack.GetInfoByID(itemID)) or itemID))
 			return true
 		else
 			-- Not in combat: Swap directly
@@ -147,25 +140,19 @@ function ItemRack.ManualQueueAdvance(slot)
 	
 	-- Try items after current index
 	for i = currentIdx + 1, #list do
-		if list[i] == 0 then break end -- Stop marker
-		local candidateBaseID = string.match(tostring(list[i]), "^(%d+)")
-		if candidateBaseID then
-			local bag, bagSlot = findInBags(candidateBaseID)
-			if bag then
-				return tryEquipOrQueue(list[i], bag, bagSlot)
-			end
+		if list[i].id == 0 then break end -- Stop marker
+		local inv, bag, bagSlot = ItemRack.FindItem(list[i].id)
+		if bag and bagSlot then
+			return tryEquipOrQueue(list[i].id, bag, bagSlot)
 		end
 	end
 	
 	-- Wrap around to start of queue
 	for i = 1, currentIdx - 1 do
-		if list[i] == 0 then break end
-		local candidateBaseID = string.match(tostring(list[i]), "^(%d+)")
-		if candidateBaseID then
-			local bag, bagSlot = findInBags(candidateBaseID)
-			if bag then
-				return tryEquipOrQueue(list[i], bag, bagSlot)
-			end
+		if list[i].id == 0 then break end
+		local inv, bag, bagSlot = ItemRack.FindItem(list[i].id)
+		if bag and bagSlot then
+			return tryEquipOrQueue(list[i].id, bag, bagSlot)
 		end
 	end
 	
