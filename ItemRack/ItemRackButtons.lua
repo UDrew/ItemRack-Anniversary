@@ -224,6 +224,7 @@ function ItemRack.InitButtons()
 	ItemRackFrame:RegisterEvent("UPDATE_BINDINGS")
 	ItemRack.ReflectMainScale()
 	ItemRack.ReflectMenuOnRight()
+	ItemRack.ReflectRightClickUse()
 	ItemRack.ConstructLayout()
 	ItemRack.UpdateButtonCooldowns()
 	ItemRack.ReflectHideOOC()
@@ -237,7 +238,7 @@ end
 function ItemRack.UpdateDisableAltClick()
 	if not InCombatLockdown() then
 		for i=0,19 do
-			_G["ItemRackButton"..i]:SetAttribute("alt-type1",ItemRackSettings.DisableAltClick=="OFF" and "" or nil)
+			_G["ItemRackButton"..i]:SetAttribute("alt-type1",ItemRackSettings.DisableAltClick=="OFF" and ATTRIBUTE_NOOP or nil)
 		end
 	end
 end
@@ -854,6 +855,20 @@ function ItemRack.ReflectMenuOnRight()
 	end
 end
 
+function ItemRack.ReflectRightClickUse()
+	if not InCombatLockdown() then
+		for i=0,19 do
+			if ItemRackSettings.RightClickUse == "ON" then
+				_G["ItemRackButton"..i]:SetAttribute("type2", "item")
+				_G["ItemRackButton"..i]:SetAttribute("item2", tostring(i))
+			else
+				_G["ItemRackButton"..i]:SetAttribute("type2", nil)
+				_G["ItemRackButton"..i]:SetAttribute("item2", nil)
+			end
+		end
+	end
+end
+
 function ItemRack.ReflectHideOOC()
 	for i in pairs(ItemRackUser.Buttons) do
 		if ItemRackSettings.HideOOC=="ON" and not ItemRack.inCombat then
@@ -877,10 +892,12 @@ end
 --[[ Cooldowns ]]
 
 function ItemRack.WriteCooldown(where,start,duration)
-	local cooldown = duration - (GetTime()-start)
-	if start==0 or ItemRackSettings.CooldownCount=="OFF" then
+	if not start or not duration or start==0 or ItemRackSettings.CooldownCount=="OFF" then
 		where:SetText("")
-	elseif cooldown<3 and not where:GetText() then
+		return
+	end
+	local cooldown = duration - (GetTime()-start)
+	if cooldown<3 and not where:GetText() then
 		-- this is a global cooldown. don't display it. not accurate but at least not annoying
 	else
 		if ItemRackSettings.LargeNumbers=="ON" then

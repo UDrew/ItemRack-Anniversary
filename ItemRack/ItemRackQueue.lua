@@ -56,7 +56,7 @@ function ItemRack.GetNextItemInQueue(slot)
 	-- simple loop to find current item in list and return next valid one
 	local idx = 0
 	for i=1,#(list) do
-		local listBaseID = string.match(list[i],"(%d+)")
+		local listBaseID = string.match(list[i].id,"(%d+)")
 		if listBaseID == baseID then
 			idx = i
 			break
@@ -65,8 +65,8 @@ function ItemRack.GetNextItemInQueue(slot)
 
 	-- Look forward from current item
 	for i=idx+1,#(list) do
-		if list[i]~=0 then -- 0 is stop marker
-			local candidate = string.match(list[i],"(%d+)")
+		if list[i].id~=0 then -- 0 is stop marker
+			local candidate = string.match(list[i].id,"(%d+)")
 			local count = candidate and GetItemCount(candidate) or 0
 			if candidate and count>0 then
 				return list[i].id
@@ -78,8 +78,8 @@ function ItemRack.GetNextItemInQueue(slot)
 	
 	-- Wrap around to start if nothing found after current
 	for i=1,idx-1 do
-		if list[i]~=0 then
-			local candidate = string.match(list[i],"(%d+)")
+		if list[i].id~=0 then
+			local candidate = string.match(list[i].id,"(%d+)")
 			local count = candidate and GetItemCount(candidate) or 0
 			if candidate and count>0 then
 				return list[i].id
@@ -91,14 +91,21 @@ end
 -- Simpler function for manual queue cycling (right-click advance)
 -- Finds next item in queue and equips it directly, or queues for after combat
 function ItemRack.ManualQueueAdvance(slot)
-	if not slot or IsInventoryItemLocked(slot) then return end
+	if not slot or IsInventoryItemLocked(slot) then 
+		ItemRack.Print("DEBUG: Slot locked or invalid")
+		return 
+	end
 	
 	local list = ItemRack.GetQueues()[slot]
-	if not list or #list == 0 then return end
+	if not list or #list == 0 then 
+		ItemRack.Print("DEBUG: No queue list found for slot")
+		return 
+	end
 	
 	-- Get currently equipped item's exact ID and base ID
 	local equippedExactID = ItemRack.GetID(slot)
 	local equippedBaseID = ItemRack.GetIRString(equippedExactID, true)
+	ItemRack.Print("DEBUG: Manual Advance on slot "..tostring(slot).." (Equipped: "..tostring(equippedBaseID)..")")
 	
 	-- Find current item in queue (exact match first)
 	local currentIdx = 0
@@ -124,38 +131,32 @@ function ItemRack.ManualQueueAdvance(slot)
 		end
 	end
 	
-	-- Helper to attempt swap or queue
-	local function tryEquipOrQueue(itemID, bag, bagSlot)
-		if InCombatLockdown() or UnitAffectingCombat("player") or ItemRack.IsPlayerReallyDead() then
-			-- In combat: Add to combat queue instead of swapping
-			ItemRack.AddToCombatQueue(slot, itemID)
-			ItemRack.Print("Queued for after combat: "..tostring(select(1, ItemRack.GetInfoByID(itemID)) or itemID))
-			return true
-		else
-			-- Not in combat: Swap directly
-			ItemRack.MoveItem(bag, bagSlot, slot, nil)
+	ItemRack.Print("DEBUG: Current queue index found: "..tostring(currentIdx))
+	
+	-- Helper to attempt swap
+	local function tryEquip(itemID)
+		local inv, bag, bagSlot = ItemRack.FindItem(itemID)
+		if bag and bagSlot then
+			ItemRack.Print("DEBUG: Equipping item "..tostring(itemID).." from bag "..tostring(bag))
+			ItemRack.EquipItemByID(itemID, slot)
 			return true
 		end
+		return false
 	end
 	
 	-- Try items after current index
 	for i = currentIdx + 1, #list do
 		if list[i].id == 0 then break end -- Stop marker
-		local inv, bag, bagSlot = ItemRack.FindItem(list[i].id)
-		if bag and bagSlot then
-			return tryEquipOrQueue(list[i].id, bag, bagSlot)
-		end
+		if tryEquip(list[i].id) then return true end
 	end
 	
 	-- Wrap around to start of queue
 	for i = 1, currentIdx - 1 do
 		if list[i].id == 0 then break end
-		local inv, bag, bagSlot = ItemRack.FindItem(list[i].id)
-		if bag and bagSlot then
-			return tryEquipOrQueue(list[i].id, bag, bagSlot)
-		end
+		if tryEquip(list[i].id) then return true end
 	end
 	
+	ItemRack.Print("DEBUG: Could not find any valid item in bags to advance to.")
 	return false
 end
 
