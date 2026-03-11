@@ -91,15 +91,11 @@ end
 -- Simpler function for manual queue cycling (right-click advance)
 -- Finds next item in queue and equips it directly, or queues for after combat
 function ItemRack.ManualQueueAdvance(slot)
-	if not slot or IsInventoryItemLocked(slot) then 
-		ItemRack.Print("DEBUG: Slot locked or invalid")
-		return 
+	if not slot or IsInventoryItemLocked(slot) then return
 	end
 	
 	local list = ItemRack.GetQueues()[slot]
-	if not list or #list == 0 then 
-		ItemRack.Print("DEBUG: No queue list found for slot")
-		return 
+	if not list or #list == 0 then return
 	end
 	
 	-- Get currently equipped item's exact ID and base ID
@@ -131,13 +127,12 @@ function ItemRack.ManualQueueAdvance(slot)
 		end
 	end
 	
-	ItemRack.Print("DEBUG: Current queue index found: "..tostring(currentIdx))
 	
 	-- Helper to attempt swap
 	local function tryEquip(itemID)
 		local inv, bag, bagSlot = ItemRack.FindItem(itemID)
 		if bag and bagSlot then
-			ItemRack.Print("DEBUG: Equipping item "..tostring(itemID).." from bag "..tostring(bag))
+
 			ItemRack.EquipItemByID(itemID, slot)
 			return true
 		end
@@ -156,7 +151,7 @@ function ItemRack.ManualQueueAdvance(slot)
 		if tryEquip(list[i].id) then return true end
 	end
 	
-	ItemRack.Print("DEBUG: Could not find any valid item in bags to advance to.")
+
 	return false
 end
 
