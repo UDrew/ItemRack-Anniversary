@@ -8,22 +8,13 @@ local GetItemSpell = _G.GetItemSpell or (C_Item and C_Item.GetItemSpell)
 local GetItemCount = _G.GetItemCount or (C_Item and C_Item.GetItemCount)
 local IsEquippedItem = _G.IsEquippedItem or (C_Item and C_Item.IsEquippedItem)
 
--- Debug mode - set to true to enable debug prints
-ItemRack.QueueDebug = false
-
--- Debug print helper
-local function DebugPrint(...)
-	if ItemRack.QueueDebug then
-		print("|cff00ff00[IR-Queue]|r", ...)
-	end
-end
-
--- Enable queue debugging with: /script ItemRack.QueueDebug = true
--- Disable with: /script ItemRack.QueueDebug = false
+-- Queue debug prints use the global system:
+-- Enable:  /script ItemRack.DebugTags.Queue = true
+-- Disable: /script ItemRack.DebugTags.Queue = false
 
 function ItemRack.PeriodicQueueCheck()
 	if SpellIsTargeting() then
-		DebugPrint("SpellIsTargeting - skipping queue check")
+		ItemRack.Debug("Queue","SpellIsTargeting - skipping queue check")
 		return
 	end
 	if ItemRackUser.EnableQueues=="ON" then
@@ -31,15 +22,15 @@ function ItemRack.PeriodicQueueCheck()
 		for i,v in pairs(ItemRack.GetQueuesEnabled()) do
 			if v and v == true then
 				foundEnabled = true
-				DebugPrint("Processing queue for slot:", i)
+				ItemRack.Debug("Queue","Processing queue for slot:", i)
 				ItemRack.ProcessAutoQueue(i)
 			end
 		end
 		if not foundEnabled then
-			DebugPrint("No slot queues enabled")
+			ItemRack.Debug("Queue","No slot queues enabled")
 		end
 	else
-		DebugPrint("Global queues disabled (EnableQueues ~= ON)")
+		ItemRack.Debug("Queue","Global queues disabled (EnableQueues ~= ON)")
 	end
 end
 
@@ -91,17 +82,21 @@ end
 -- Simpler function for manual queue cycling (right-click advance)
 -- Finds next item in queue and equips it directly, or queues for after combat
 function ItemRack.ManualQueueAdvance(slot)
-	if not slot or IsInventoryItemLocked(slot) then return
+	if not slot or IsInventoryItemLocked(slot) then
+		ItemRack.Debug("Queue", "ManualAdvance: slot locked or invalid")
+		return
 	end
 	
 	local list = ItemRack.GetQueues()[slot]
-	if not list or #list == 0 then return
+	if not list or #list == 0 then
+		ItemRack.Debug("Queue", "ManualAdvance: no queue for slot", slot)
+		return
 	end
 	
 	-- Get currently equipped item's exact ID and base ID
 	local equippedExactID = ItemRack.GetID(slot)
 	local equippedBaseID = ItemRack.GetIRString(equippedExactID, true)
-	ItemRack.Print("DEBUG: Manual Advance on slot "..tostring(slot).." (Equipped: "..tostring(equippedBaseID)..")")
+	ItemRack.Debug("Queue", "ManualAdvance slot", slot, "equipped:", equippedBaseID)
 	
 	-- Find current item in queue (exact match first)
 	local currentIdx = 0
@@ -127,12 +122,13 @@ function ItemRack.ManualQueueAdvance(slot)
 		end
 	end
 	
+	ItemRack.Debug("Queue", "ManualAdvance currentIdx:", currentIdx)
 	
 	-- Helper to attempt swap
 	local function tryEquip(itemID)
 		local inv, bag, bagSlot = ItemRack.FindItem(itemID)
 		if bag and bagSlot then
-
+			ItemRack.Debug("Queue", "ManualAdvance equipping", itemID, "from bag", bag)
 			ItemRack.EquipItemByID(itemID, slot)
 			return true
 		end
@@ -151,16 +147,11 @@ function ItemRack.ManualQueueAdvance(slot)
 		if tryEquip(list[i].id) then return true end
 	end
 	
-
+	ItemRack.Debug("Queue", "ManualAdvance: no valid item found in bags")
 	return false
 end
 
 function ItemRack.ProcessAutoQueue(slot)
-	local function DebugPrint(...)
-		if ItemRack.QueueDebug then
-			print("|cff00ff00[IR-Queue]|r", ...)
-		end
-	end
 	
 	if not slot or IsInventoryItemLocked(slot) then return end
 

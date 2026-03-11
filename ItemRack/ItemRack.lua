@@ -40,6 +40,20 @@ local GetNumAddOns = GetNumAddOns or (C_AddOns and C_AddOns.GetNumAddOns)
 local wowver, wowbuild, wowbuilddate, wowtoc = GetBuildInfo()
 ItemRack.Version = GetAddOnMetadata(addonName, "Version")
 
+-- Global Debug System
+-- Usage: ItemRack.Debug("Queue", "some message", someVar)
+-- Enable:  /script ItemRack.DebugTags.Queue = true
+-- Disable: /script ItemRack.DebugTags.Queue = false
+-- Enable all: /script ItemRack.DebugAll = true
+ItemRack.DebugTags = {} -- per-tag toggles, e.g. { Queue = true, Events = true }
+ItemRack.DebugAll = false -- master override to enable all tags
+
+function ItemRack.Debug(tag, ...)
+	if not ItemRack.DebugAll and not ItemRack.DebugTags[tag] then return end
+	local prefix = "|cff00ff00[IR-" .. tag .. "]|r"
+	print(prefix, ...)
+end
+
 -- by Mikinho - Fix for latest update for Classic Era/SoD v11504
 local GetMouseFocus = GetMouseFocus
 if not GetMouseFocus and GetMouseFoci then
