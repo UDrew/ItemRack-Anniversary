@@ -2,6 +2,15 @@
 
 All notable changes to the TBC Anniversary port of ItemRack will be documented in this file.
 
+## [5.0] - 2026-03-10
+### Bug Fixes
+- **Event Stack Restoration**: Completely refactored the custom Event Stack logic (`PushEvent`/`PopEvent`) to use ItemRack's native `UnequipSet` mechanisms. This fixes a major bug where events ending while in combat (e.g. dropping Mount form) failed to restore the previous gear set and permanently lost track of the active set label. It also resolves issues where events popping out-of-order failed to splice hidden gear correctly.
+- **Quick Access Queue Toggle**: Re-implemented the queue toggle logic for the Quick Access Menu. Holding Alt and Left-Clicking an item in the menu now correctly toggles the auto-queue for that specific slot on/off, and prevents native action bar dragging issues.
+- **Right-Click Queue Advance**: Fixed the Right-Click manual queue cycle. Right-clicking a Quick Access button now correctly advances to the next item in the auto-queue without throwing silent table-to-string coercion errors.
+- **Right-Click Item Use**: Fixed the "Use on Right Click" setting. In modern WoW, ItemRack failed to assign the required `type2` attribute to the SecureActionButtons. Checking this setting now natively tells the engine to trigger item usage on right-click, taking effect immediately.
+- **Menu Cooldown Refresh**: Added safety safeguards to `ItemRack.WriteCooldown` to prevent Lua arithmetic crashes when attempting to draw cooldown rings on empty or invalid quick access menu slots.
+- **Settings Menu**: Moved the "Disable Alt+Click" option from "Interface & Misc" to "Global Settings" to increase visibility and prevent user confusion regarding the Quick Access Menu alt-click features.
+
 ## [4.29.9] - 2026-03-09
 ### Bug Fixes
 - **Keybind Persistence & UI Overrides**: Reverted the core set keybinding logic to use `SetBindingClick` instead of `SetOverrideBindingClick`. This fixes an issue where standard WoW keybindings were fighting ItemRack and being improperly deleted during overlap resolution, while also ensuring that users' saved keybinds correctly restore on login. Both the native game UI and ItemRack Options can now freely edit, delete, and persist set hotkeys synchronously.

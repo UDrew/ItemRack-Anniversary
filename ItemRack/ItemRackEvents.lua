@@ -379,24 +379,11 @@ end
 function ItemRack.PushEvent(eventName)
 	if ItemRackUser.EnableEvents == "OFF" then return end
 	
-	local wasEmpty = (#ItemRackUser.EventStack == 0)
-	
 	-- Remove event if it's already in the stack
 	for i = #ItemRackUser.EventStack, 1, -1 do
 		if ItemRackUser.EventStack[i] == eventName then
 			table.remove(ItemRackUser.EventStack, i)
 		end
-	end
-	
-	-- If stack was empty before this push, capture the "adventuring" root state into ~BaseGear
-	if wasEmpty then
-		local baseGear = ItemRackUser.Sets["~BaseGear"].equip
-		for slot = 1, 19 do
-			baseGear[slot] = ItemRack.GetID(slot)
-		end
-		-- Also save helm/cloak visibility
-		ItemRackUser.Sets["~BaseGear"].ShowHelm = ShowingHelm and ShowingHelm() and 1 or 0
-		ItemRackUser.Sets["~BaseGear"].ShowCloak = ShowingCloak and ShowingCloak() and 1 or 0
 	end
 	
 	table.insert(ItemRackUser.EventStack, eventName)
@@ -409,6 +396,9 @@ function ItemRack.PushEvent(eventName)
 end
 
 function ItemRack.PopEvent(eventName)
+	local poppedSet = ItemRackUser.Events.Set[eventName]
+	local disableSound = ItemRackEvents[eventName] and ItemRackEvents[eventName].DisableSound
+
 	-- Remove the event from the stack
 	for i = #ItemRackUser.EventStack, 1, -1 do
 		if ItemRackUser.EventStack[i] == eventName then
@@ -416,25 +406,9 @@ function ItemRack.PopEvent(eventName)
 		end
 	end
 	
-	local disableSound = ItemRackEvents[eventName] and ItemRackEvents[eventName].DisableSound
-	
-	-- If stack has remaining events, equip the top one
-	if #ItemRackUser.EventStack > 0 then
-		local topEvent = ItemRackUser.EventStack[#ItemRackUser.EventStack]
-		local topSet = ItemRackUser.Events.Set[topEvent]
-		if topSet then
-			ItemRack.EquipSet(topSet, disableSound)
-		end
-	else
-		-- Stack is empty, return to the root ~BaseGear
-		ItemRack.EquipSet("~BaseGear", disableSound)
-		
-		-- Clear the BaseGear so we don't accumulate stale visual states (like ShowHelm) when we shouldn't
-		for slot = 1, 19 do
-			ItemRackUser.Sets["~BaseGear"].equip[slot] = nil
-		end
-		ItemRackUser.Sets["~BaseGear"].ShowHelm = nil
-		ItemRackUser.Sets["~BaseGear"].ShowCloak = nil
+	-- Always unequip the set that we pushed, so it restores its exact swaps
+	if poppedSet then
+		ItemRack.UnequipSet(poppedSet, disableSound)
 	end
 end
 
