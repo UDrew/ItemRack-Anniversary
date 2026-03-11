@@ -907,7 +907,7 @@ function ItemRack.WriteCooldown(where,start,duration)
 				local h = math.floor(cooldown / 3600)
 				local m = math.floor((cooldown - h * 3600) / 60)
 				text = string.format("%d:%02d", h, m)
-			elseif cooldown >= 60 then
+			elseif (ItemRackSettings.Cooldown90=="ON" and cooldown >= 90) or (ItemRackSettings.Cooldown90=="OFF" and cooldown >= 60) then
 				local m = math.floor(cooldown / 60)
 				local s = math.floor(cooldown - m * 60)
 				text = string.format("%d:%02d", m, s)
