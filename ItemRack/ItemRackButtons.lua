@@ -705,6 +705,12 @@ function ItemRack.ButtonPostClick(self,button)
 		end
 		
 		
+		-- Plain right-click on Slot 20 opens the Settings page
+		if id==20 then
+			ItemRack.ToggleOptions(self)
+			return
+		end
+		
 		-- Plain right-click advances the queue OR opens the menu based on MenuOnRight setting
 		if ItemRackSettings.MenuOnRight=="ON" then
 			if ItemRackMenuFrame:IsVisible() and ItemRack.menuOpen==id then

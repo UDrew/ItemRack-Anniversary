@@ -13,21 +13,16 @@ local IsEquippedItem = _G.IsEquippedItem or (C_Item and C_Item.IsEquippedItem)
 -- Disable: /script ItemRack.DebugTags.Queue = false
 
 function ItemRack.PeriodicQueueCheck()
-	if SpellIsTargeting() then
-		ItemRack.Debug("Queue","SpellIsTargeting - skipping queue check")
-		return
-	end
+	-- Don't process queue during combat, death or while casting
+	if ItemRack.inCombat or ItemRack.IsPlayerReallyDead() or ItemRack.NowCasting then return end
+	
+	-- Only process queues if global EnableQueues is ON and at least one slot is enabled
 	if ItemRackUser.EnableQueues=="ON" then
-		local foundEnabled = false
 		for i,v in pairs(ItemRack.GetQueuesEnabled()) do
-			if v and v == true then
-				foundEnabled = true
-				ItemRack.Debug("Queue","Processing queue for slot:", i)
+			if v then
 				ItemRack.ProcessAutoQueue(i)
 			end
 		end
-		if not foundEnabled then
-			ItemRack.Debug("Queue","No slot queues enabled")
 		end
 	else
 		ItemRack.Debug("Queue","Global queues disabled (EnableQueues ~= ON)")
@@ -94,7 +89,9 @@ function ItemRack.ManualQueueAdvance(slot)
 	end
 	
 	-- Get currently equipped item's exact ID and base ID
-	local equippedExactID = ItemRack.GetID(slot)
+	-- In combat, we might already have an item pending organically. Evaluate from the pending item first.
+	local pendingID = ItemRack.CombatQueue[slot]
+	local equippedExactID = pendingID or ItemRack.GetID(slot)
 	local equippedBaseID = ItemRack.GetIRString(equippedExactID, true)
 	ItemRack.Debug("Queue", "ManualAdvance slot", slot, "equipped:", equippedBaseID)
 	
@@ -224,7 +221,7 @@ function ItemRack.ProcessAutoQueue(slot)
 		if GetItemCount(nextItem)>0 and not IsEquippedItem(nextItem) then
 			local _,bag = ItemRack.FindItem(nextItemID)
 			if bag and not (ItemRack.CombatQueue[slot]==nextItemID) then
-				ItemRack.EquipItemByID(nextItemID,slot)
+				ItemRack.EquipItemByID(nextItemID,slot,true)
 			end
 		end
 		
