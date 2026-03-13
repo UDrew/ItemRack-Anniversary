@@ -40,6 +40,20 @@ local GetNumAddOns = GetNumAddOns or (C_AddOns and C_AddOns.GetNumAddOns)
 local wowver, wowbuild, wowbuilddate, wowtoc = GetBuildInfo()
 ItemRack.Version = GetAddOnMetadata(addonName, "Version")
 
+-- Global Debug System
+-- Usage: ItemRack.Debug("Queue", "some message", someVar)
+-- Enable:  /script ItemRack.DebugTags.Queue = true
+-- Disable: /script ItemRack.DebugTags.Queue = false
+-- Enable all: /script ItemRack.DebugAll = true
+ItemRack.DebugTags = {} -- per-tag toggles, e.g. { Queue = true, Events = true }
+ItemRack.DebugAll = false -- master override to enable all tags
+
+function ItemRack.Debug(tag, ...)
+	if not ItemRack.DebugAll and not ItemRack.DebugTags[tag] then return end
+	local prefix = "|cff00ff00[IR-" .. tag .. "]|r"
+	print(prefix, ...)
+end
+
 -- by Mikinho - Fix for latest update for Classic Era/SoD v11504
 local GetMouseFocus = GetMouseFocus
 if not GetMouseFocus and GetMouseFoci then
@@ -338,6 +352,8 @@ function ItemRack.InitEventHandlers()
 	handler.UNIT_SPELLCAST_SUCCEEDED = ItemRack.OnCastingStop
 	handler.UNIT_SPELLCAST_INTERRUPTED = ItemRack.OnCastingStop
 	handler.UNIT_SPELLCAST_FAILED = ItemRack.OnCastingStop
+	handler.UNIT_SPELLCAST_CHANNEL_START = ItemRack.OnCastingStart
+	handler.UNIT_SPELLCAST_CHANNEL_STOP = ItemRack.OnCastingStop
 	handler.CHARACTER_POINTS_CHANGED = ItemRack.UpdateClassSpecificStuff
 	handler.PLAYER_TALENT_UPDATE = ItemRack.UpdateClassSpecificStuff
 	handler.PLAYER_ENTERING_WORLD = ItemRack.OnEnterWorld
@@ -443,6 +459,13 @@ function ItemRack.OnCastingStart(self,event,unit)
 	if unit=="player" then
 		if CastingInfo() or ChannelInfo() then
 			ItemRack.NowCasting = true
+			--If channeled, let's store the spellName to match it up to the UNIT_SPELLCAST_SUCCEEDED event that immediately gets fired after starting.
+			if ChannelInfo() then
+				local spellName = UnitChannelInfo("player")
+				ItemRack.NowChannelingSpell = spellName
+			else
+				ItemRack.NowChannelingSpell = nil
+			end
 		end
 	end
 end
@@ -452,7 +475,17 @@ function ItemRack.OnCastingStop(self,event,unit)
 		if not ItemRack.NowCasting then
 			return
 		else
+			if ItemRack.NowChannelingSpell then
+				local spellName = UnitChannelInfo("player")
+				if spellName and event == "UNIT_SPELLCAST_SUCCEEDED" and spellName == ItemRack.NowChannelingSpell then
+					--When channeling, a UNIT_SPELLCAST_SUCCEEDED event will fire immediately after starting.
+					--If this comes in for our channeled spell, ignore this event and wait for the UNIT_SPELLCAST_CHANNEL_STOP to fire.
+					return
+				end
+			end
+			
 			ItemRack.NowCasting = nil
+			ItemRack.NowChannelingSpell = nil
 			-- This check is in the event that a successful spellcast puts you in combat
 			if event ~= "UNIT_SPELLCAST_SUCCEEDED" and not ItemRack.inCombat then
 				ItemRack.ProcessCombatQueue()
@@ -520,12 +553,19 @@ function ItemRack.ProcessCombatQueue()
 	if not ItemRack.IsPlayerReallyDead() and next(ItemRack.CombatQueue) then
 		local combat = ItemRackUser.Sets["~CombatQueue"].equip
 		local queue = ItemRack.CombatQueue
+		ItemRack.AutoQueueFlag = ItemRack.AutoQueueFlag or {}
 		for i in pairs(combat) do
 			combat[i] = nil
 		end
 		for i in pairs(queue) do
-			combat[i] = queue[i]
-			queue[i] = nil
+			-- Skip slots whose auto-queue was disabled after this entry was added
+			if not ItemRack.GetQueuesEnabled()[i] and ItemRack.GetQueues()[i] then
+				queue[i] = nil
+			else
+				combat[i] = queue[i]
+				queue[i] = nil
+			end
+			ItemRack.AutoQueueFlag[i] = nil
 		end
 		ItemRackUser.Sets["~CombatQueue"].oldset = ItemRack.CombatSet
 		ItemRack.UpdateCombatQueue()
@@ -712,6 +752,8 @@ function ItemRack.InitCore()
 	ItemRackFrame:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 	ItemRackFrame:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 	ItemRackFrame:RegisterEvent("UNIT_SPELLCAST_FAILED")
+	ItemRackFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_START")
+	ItemRackFrame:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
 	ItemRackFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 	--end
 	ItemRack.StartTimer("CooldownUpdate")
@@ -1811,14 +1853,14 @@ function ItemRack.UnmuteSwapSounds()
 	end
 end
 
-function ItemRack.EquipItemByID(id,slot)
+function ItemRack.EquipItemByID(id,slot,isAutoQueue)
 	if not id then return end
 	if ItemRack.NowCasting or (not ItemRack.SlotInfo[slot].swappable and (UnitAffectingCombat("player") or ItemRack.IsPlayerReallyDead()) ) then
 		-- Toggle: if the same item is already queued, un-queue it (manual cancel)
 		if ItemRack.CombatQueue[slot] == id then
 			ItemRack.RemoveFromCombatQueue(slot)
 		else
-			ItemRack.AddToCombatQueue(slot,id)
+			ItemRack.AddToCombatQueue(slot,id,isAutoQueue)
 		end
 	elseif not GetCursorInfo() and not SpellIsTargeting() then
 		local disableSound = ItemRackSettings.DisableSwapSound == "ON"
@@ -1943,9 +1985,11 @@ function ItemRack.IsPlayerReallyDead()
 	return dead
 end
 
-function ItemRack.AddToCombatQueue(slot,id)
+function ItemRack.AddToCombatQueue(slot,id,isAutoQueue)
 	if ItemRack.CombatQueue[slot] ~= id then
 		ItemRack.CombatQueue[slot] = id
+		ItemRack.AutoQueueFlag = ItemRack.AutoQueueFlag or {}
+		ItemRack.AutoQueueFlag[slot] = isAutoQueue
 		ItemRack.UpdateCombatQueue()
 	end
 end
@@ -1953,6 +1997,7 @@ end
 function ItemRack.RemoveFromCombatQueue(slot)
 	if ItemRack.CombatQueue[slot] ~= nil then
 		ItemRack.CombatQueue[slot] = nil
+		if ItemRack.AutoQueueFlag then ItemRack.AutoQueueFlag[slot] = nil end
 		ItemRack.UpdateCombatQueue()
 	end
 end
