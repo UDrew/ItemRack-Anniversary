@@ -547,35 +547,41 @@ function ItemRack.ProcessZoneEvent()
 				if not ItemRack.IsSetEquipped(setname) then
 					local keepMount = true
 					
-					-- If we're currently mounted and in our mount set.
+					-- If we're currently mounted and in our mount event.
 					if ItemRackUser.Sets["Mounted"] and isMounted and events["Mounted"].Active then
-						-- If the oldset for Mounted is already the set we want to wear, just make sure we're still in a zone where we want to be mounted and then we'll stay mounted.
-						-- The set we'll want to wear for this zone will be reapplied once we dismount.
-						if ItemRackUser.Sets["Mounted"].oldset == setname then
-							if events["Mounted"].NotInPVP then
-								if instanceType=="arena" or instanceType=="pvp" then
-									keepMount = false
-								end
-							end
-							if events["Mounted"].NotInPVE then
-								if instanceType=="party" or instanceType=="raid" then
-									keepMount = false
-								end
-							end
-						else
-							-- Allow the mount set to be overriden if the old set is no longer what we want for this zone.
+						-- If we're not actually wearing the mount set, then don't keepMount and let it reset in CheckForMountedEvents, if needed.
+						if not ItemRack.IsSetEquipped(ItemRackUser.Events.Set["Mounted"]) then
 							keepMount = false
-							-- Allow CheckForMountedEvents to update the set after we update it, if needed.
-							events["Mounted"].Active = false
-							-- _refreshMountState will allow CheckForMountedEvents to refresh the mount status after the timer goes off a few times.
-							-- This is to give a bit of a buffer between our new set being equipped and the mount set potentially being equipped.
-							_refreshMountState = 4
+						else
+							-- If the oldset for Mounted is already the set we want to wear, just make sure we're still in a zone where we want to be mounted and then we'll stay mounted.
+							-- The set we'll want to wear for this zone will be reapplied once we dismount.
+							if ItemRackUser.Sets["Mounted"].oldset == setname then
+								if events["Mounted"].NotInPVP then
+									if instanceType=="arena" or instanceType=="pvp" then
+										keepMount = false
+									end
+								end
+								if events["Mounted"].NotInPVE then
+									if instanceType=="party" or instanceType=="raid" then
+										keepMount = false
+									end
+								end
+							else
+								-- Allow the mount set to be overriden if the old set is no longer what we want for this zone.
+								keepMount = false
+							end
 						end
 					else
 						keepMount = false
 					end
 					
 					if not keepMount then
+						-- Allow CheckForMountedEvents to update the set after we update it, if needed.
+						events["Mounted"].Active = false
+						-- _refreshMountState will allow CheckForMountedEvents to refresh the mount status after the timer goes off a few times.
+						-- This is to give a bit of a buffer between our new set being equipped and the mount set potentially being equipped.
+						_refreshMountState = 4
+								
 						if events[eventName].Active then
 							-- Already active but gear is missing. Just equip it directly without pushing again.
 							ItemRack.EquipSet(setname, events[eventName].DisableSound)
