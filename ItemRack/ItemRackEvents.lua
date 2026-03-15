@@ -559,11 +559,19 @@ function ItemRack.ProcessZoneEvent()
 								if events["Mounted"].NotInPVP then
 									if instanceType=="arena" or instanceType=="pvp" then
 										keepMount = false
+										
+										if events["Mounted"].Unequip then
+											ItemRack.PopEvent("Mounted")
+										end
 									end
 								end
 								if events["Mounted"].NotInPVE then
 									if instanceType=="party" or instanceType=="raid" then
 										keepMount = false
+										
+										if events["Mounted"].Unequip then
+											ItemRack.PopEvent("Mounted")
+										end
 									end
 								end
 							else
