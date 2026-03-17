@@ -3,6 +3,7 @@ local LoadAddOn = LoadAddOn or (C_AddOns and C_AddOns.LoadAddOn)
 
 -- Compatibility shim for loadstring (renamed to load in Lua 5.2+)
 local loadstring = loadstring or load
+local _refreshMountState = 0
 
 --[[ Default event definitions
 
@@ -530,7 +531,8 @@ function ItemRack.ProcessZoneEvent()
 	local currentSubZone = GetSubZoneText()
 	local eventToEquip, eventToUnequip, setname
 	local _, instanceType = IsInInstance()
-    
+	local isMounted = IsMounted() and not UnitOnTaxi("player")
+	
 	for eventName in pairs(enabled) do
 		if events[eventName].Type=="Zone" then
 			setname = ItemRackUser.Events.Set[eventName]
@@ -543,11 +545,57 @@ function ItemRack.ProcessZoneEvent()
 				-- Issue #5: Always attempt to equip if we enter/change to a matching zone,
 				-- even if we were already in another matching zone previously.
 				if not ItemRack.IsSetEquipped(setname) then
-					if events[eventName].Active then
-						-- Already active but gear is missing. Just equip it directly without pushing again.
-						ItemRack.EquipSet(setname, events[eventName].DisableSound)
+					local keepMount = true
+					
+					-- If we're currently mounted and in our mount event.
+					if ItemRackUser.Sets["Mounted"] and isMounted and events["Mounted"].Active then
+						-- If we're not actually wearing the mount set, then don't keepMount and let it reset in CheckForMountedEvents, if needed.
+						if not ItemRack.IsSetEquipped(ItemRackUser.Events.Set["Mounted"]) then
+							keepMount = false
+						else
+							-- If the oldset for Mounted is already the set we want to wear, just make sure we're still in a zone where we want to be mounted and then we'll stay mounted.
+							-- The set we'll want to wear for this zone will be reapplied once we dismount.
+							if ItemRackUser.Sets["Mounted"].oldset == setname then
+								if events["Mounted"].NotInPVP then
+									if instanceType=="arena" or instanceType=="pvp" then
+										keepMount = false
+										
+										if events["Mounted"].Unequip then
+											ItemRack.PopEvent("Mounted")
+										end
+									end
+								end
+								if events["Mounted"].NotInPVE then
+									if instanceType=="party" or instanceType=="raid" then
+										keepMount = false
+										
+										if events["Mounted"].Unequip then
+											ItemRack.PopEvent("Mounted")
+										end
+									end
+								end
+							else
+								-- Allow the mount set to be overriden if the old set is no longer what we want for this zone.
+								keepMount = false
+							end
+						end
 					else
-						eventToEquip = eventName
+						keepMount = false
+					end
+					
+					if not keepMount then
+						-- Allow CheckForMountedEvents to update the set after we update it, if needed.
+						events["Mounted"].Active = false
+						-- _refreshMountState will allow CheckForMountedEvents to refresh the mount status after the timer goes off a few times.
+						-- This is to give a bit of a buffer between our new set being equipped and the mount set potentially being equipped.
+						_refreshMountState = 4
+								
+						if events[eventName].Active then
+							-- Already active but gear is missing. Just equip it directly without pushing again.
+							ItemRack.EquipSet(setname, events[eventName].DisableSound)
+						else
+							eventToEquip = eventName
+						end
 					end
 				end
 				events[eventName].Active = true
@@ -710,9 +758,12 @@ function ItemRack.CheckForMountedEvents()
 	end
 
 	local isPlayerMounted = IsMounted() and not UnitOnTaxi("player")
-	if isPlayerMounted ~= _lastStateMounted then
+	if isPlayerMounted ~= _lastStateMounted or _refreshMountState == 1 then
 		_lastStateMounted = isPlayerMounted
+		_refreshMountState = 0
 		ItemRack.ProcessBuffEvent()
+	elseif _refreshMountState > 1 then
+		_refreshMountState = _refreshMountState - 1
 	end
 end
 
